@@ -44,6 +44,17 @@ def build_mlp(
         activation = _str_to_activation[activation]
     if isinstance(output_activation, str):
         output_activation = _str_to_activation[output_activation]
+    
+    seq = []
+    seq.append(nn.Linear(input_size, size))
+    seq.append(activation)
+    for i in range(n_layers):
+        seq.append(nn.Linear(size, size))
+        seq.append(activation)
+    seq.append(nn.Linear(size, output_size))
+    seq.append(output_activation)
+
+    return nn.Sequential(*seq)
 
     # TODO: return a MLP. This should be an instance of nn.Module
     # Note: nn.Sequential is an instance of nn.Module.
