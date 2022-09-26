@@ -1,3 +1,9 @@
+## Report
+
+My report can be found [here](report.pdf).
+
+---
+
 ## Setup
 
 You can run this code on your own machine or on Google Colab. 
