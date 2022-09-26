@@ -3,6 +3,7 @@ import numpy as np
 from .base_agent import BaseAgent
 from cs285.policies.MLP_policy import MLPPolicyPG
 from cs285.infrastructure.replay_buffer import ReplayBuffer
+from cs285.infrastructure import utils
 
 
 class PGAgent(BaseAgent):
@@ -42,7 +43,9 @@ class PGAgent(BaseAgent):
         # TODO: update the PG actor/policy using the given batch of data 
         # using helper functions to compute qvals and advantages, and
         # return the train_log obtained from updating the policy
-
+        q_values = self.calculate_q_vals(rewards_list)
+        advantages = self.estimate_advantage(observations, rewards_list, q_values, terminals)
+        train_log = self.actor.update(observations, actions, advantages, q_values)
         return train_log
 
     def calculate_q_vals(self, rewards_list):
@@ -69,12 +72,12 @@ class PGAgent(BaseAgent):
         # then flattened to a 1D numpy array.
 
         if not self.reward_to_go:
-            TODO
+            q_values = np.concatenate([self._discounted_return(rewards) for rewards in rewards_list])
 
         # Case 2: reward-to-go PG
         # Estimate Q^{pi}(s_t, a_t) by the discounted sum of rewards starting from t
         else:
-            TODO
+            q_values = np.concatenate([self._discounted_cumsum(rewards) for rewards in rewards_list])
 
         return q_values
 
@@ -94,7 +97,8 @@ class PGAgent(BaseAgent):
             ## TODO: values were trained with standardized q_values, so ensure
                 ## that the predictions have the same mean and standard deviation as
                 ## the current batch of q_values
-            values = TODO
+            values = utils.normalize(values_unnormalized, np.mean(values_unnormalized), np.std(values_unnormalized))
+            values = values * np.std(q_values) + np.mean(q_values)
 
             if self.gae_lambda is not None:
                 ## append a dummy T+1 value for simpler recursive calculation
@@ -114,13 +118,16 @@ class PGAgent(BaseAgent):
                     ## HINT: use terminals to handle edge cases. terminals[i]
                         ## is 1 if the state is the last in its trajectory, and
                         ## 0 otherwise.
-
+                    if terminals[i] == 1:
+                        advantages[i] = rews[i] - values[i]
+                    else:
+                        advantages[i] = rews[i] + self.gamma*values[i+1] - values[i] + self.gamma*self.gae_lambda*advantages[i+1]
                 # remove dummy advantage
                 advantages = advantages[:-1]
 
             else:
                 ## TODO: compute advantage estimates using q_values, and values as baselines
-                advantages = TODO
+                advantages = q_values - values
 
         # Else, just set the advantage to [Q]
         else:
@@ -129,7 +136,7 @@ class PGAgent(BaseAgent):
         # Normalize the resulting advantages to have a mean of zero
         # and a standard deviation of one
         if self.standardize_advantages:
-            advantages = TODO
+            advantages = utils.normalize(advantages, np.mean(advantages), np.std(advantages))
 
         return advantages
 
@@ -154,7 +161,11 @@ class PGAgent(BaseAgent):
 
             Output: list where each index t contains sum_{t'=0}^T gamma^t' r_{t'}
         """
-
+        now = 0
+        for i in reversed(range(len(rewards))):
+            now *= self.gamma
+            now += rewards[i]
+        list_of_discounted_returns = [now] * len(rewards)
         return list_of_discounted_returns
 
     def _discounted_cumsum(self, rewards):
@@ -163,5 +174,10 @@ class PGAgent(BaseAgent):
             -takes a list of rewards {r_0, r_1, ..., r_t', ... r_T},
             -and returns a list where the entry in each index t' is sum_{t'=t}^T gamma^(t'-t) * r_{t'}
         """
-
+        now = 0.0
+        list_of_discounted_cumsums = [0] * len(rewards)
+        for i in reversed(range(len(rewards))):
+            now *= self.gamma
+            now += rewards[i]
+            list_of_discounted_cumsums[i] = now
         return list_of_discounted_cumsums
