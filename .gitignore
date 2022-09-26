@@ -131,4 +131,7 @@ dmypy.json
 # train_log
 data
 data_backup
+
+# submission things
 *.zip
+*.md
