@@ -135,3 +135,5 @@ data_backup
 # submission things
 *.zip
 *.md
+run_*.ipynb
+
