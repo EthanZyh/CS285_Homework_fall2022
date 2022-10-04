@@ -330,7 +330,7 @@ class RL_Trainer(object):
 
     def train_agent(self):
         # COPIED FROM PREVIOUS HW
-        print('\nTraining agent using sampled data from replay buffer...')
+        # print('\nTraining agent using sampled data from replay buffer...')
         all_logs = []
         for train_step in range(self.params['num_agent_train_steps_per_iter']):
 

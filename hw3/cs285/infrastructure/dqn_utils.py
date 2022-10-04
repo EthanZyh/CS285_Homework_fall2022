@@ -36,7 +36,7 @@ def register_custom_envs():
         )
 
 
-def get_env_kwargs(env_name):
+def get_env_kwargs(env_name, gt=0):
     if env_name in ['MsPacman-v0', 'PongNoFrameskip-v4']:
         kwargs = {
             'learning_starts': 50000,
@@ -52,7 +52,7 @@ def get_env_kwargs(env_name):
             'gamma': 0.99,
         }
         kwargs['optimizer_spec'] = atari_optimizer(kwargs['num_timesteps'])
-        kwargs['exploration_schedule'] = atari_exploration_schedule(kwargs['num_timesteps'])
+        kwargs['exploration_schedule'] = atari_exploration_schedule(kwargs['num_timesteps'], gt)
 
     elif env_name == 'LunarLander-v3':
         def lunar_empty_wrapper(env):
@@ -118,14 +118,16 @@ def create_atari_q_network(ob_dim, num_actions):
         nn.Linear(512, num_actions),
     )
 
-def atari_exploration_schedule(num_timesteps):
-    return PiecewiseSchedule(
-        [
-            (0, 1.0),
-            (1e6, 0.1),
-            (num_timesteps / 8, 0.01),
-        ], outside_value=0.01
-    )
+def atari_exploration_schedule(num_timesteps, gt):
+    if gt==0:
+        return PiecewiseSchedule([(0, 1.0),(1e6, 0.1),(num_timesteps / 8, 0.01),], outside_value=0.01)
+    elif gt==1:
+        return PiecewiseSchedule([(0, 0.8),(1e6, 0.1),(num_timesteps / 8, 0.01),], outside_value=0.01)
+    elif gt==2:
+        return PiecewiseSchedule([(0, 0.8),(1e6, 0.09),(num_timesteps / 8, 0.008),], outside_value=0.005)
+    elif gt==3:
+        return PiecewiseSchedule([(0, 1.0),(1e6, 0.2),(num_timesteps / 8, 0.03),], outside_value=0.03)
+
 
 
 def atari_ram_exploration_schedule(num_timesteps):
