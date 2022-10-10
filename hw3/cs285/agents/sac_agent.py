@@ -1,8 +1,11 @@
 from collections import OrderedDict
 
+import torch
+
 from cs285.critics.bootstrapped_continuous_critic import \
     BootstrappedContinuousCritic
 from cs285.infrastructure.replay_buffer import ReplayBuffer
+from cs285.infrastructure.sac_utils import soft_update_params
 from cs285.infrastructure.utils import *
 from cs285.policies.MLP_policy import MLPPolicyAC
 from .base_agent import BaseAgent
@@ -50,7 +53,40 @@ class SACAgent(BaseAgent):
         # 1. Compute the target Q value. 
         # HINT: You need to use the entropy term (alpha)
         # 2. Get current Q estimates and calculate critic loss
-        # 3. Optimize the critic  
+        # 3. Optimize the critic
+
+        # some pre-defined variables
+        gamma = self.gamma
+        alpha = self.actor.alpha.detach()
+
+        # convert to torch.Tensor
+        ob = ptu.from_numpy(ob_no)
+        ac = ptu.from_numpy(ac_na)
+        next_ob = ptu.from_numpy(next_ob_no)
+        re = ptu.from_numpy(re_n)
+        terminal = ptu.from_numpy(terminal_n)
+
+        # calc q
+        q1, q2 = self.critic.forward(ob, ac)
+
+        # calc q_target
+        next_ac_dist = self.actor.forward(next_ob)
+        next_ac = next_ac_dist.rsample().clip(*self.action_range)
+        next_entropy = -next_ac_dist.log_prob(next_ac).sum(dim=1)
+        next_q1, next_q2 = self.critic_target(next_ob, next_ac)
+        minQ = torch.min(next_q1, next_q2)
+        q_target = re + gamma * (minQ + alpha*next_entropy) * (1-terminal)
+        q_target = q_target.detach() # independent of critic. detach!!!
+
+        # calc loss,  optimize
+        loss1 = self.critic.loss(q1, q_target)
+        loss2 = self.critic.loss(q2, q_target)
+        loss_sum = loss1 + loss2
+        self.critic.optimizer.zero_grad()
+        loss_sum.backward()
+        self.critic.optimizer.step()
+        critic_loss = loss_sum.item()
+        
         return critic_loss
 
     def train(self, ob_no, ac_na, re_n, next_ob_no, terminal_n):
@@ -67,11 +103,20 @@ class SACAgent(BaseAgent):
         #     update the actor
 
         # 4. gather losses for logging
+
+        for step in range(self.agent_params['num_critic_updates_per_agent_update']):
+            critic_loss = self.update_critic(ob_no, ac_na, next_ob_no, re_n, terminal_n)
+            if step % self.critic_target_update_frequency == 0:
+                soft_update_params(self.critic, self.critic_target, self.critic_tau)
+        
+        for step in range(self.agent_params['num_actor_updates_per_agent_update']):
+            actor_loss, alpha_loss, alpha_value = self.actor.update(ob_no, self.critic)
+
         loss = OrderedDict()
-        loss['Critic_Loss'] = TODO
-        loss['Actor_Loss'] = TODO
-        loss['Alpha_Loss'] = TODO
-        loss['Temperature'] = TODO
+        loss['Critic_Loss'] = critic_loss
+        loss['Actor_Loss'] = actor_loss
+        loss['Alpha_Loss'] = alpha_loss
+        loss['Temperature'] = alpha_value
 
         return loss
 
