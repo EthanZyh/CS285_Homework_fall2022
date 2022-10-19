@@ -55,38 +55,33 @@ class SACAgent(BaseAgent):
         # 2. Get current Q estimates and calculate critic loss
         # 3. Optimize the critic
 
-        # some pre-defined variables
         gamma = self.gamma
         alpha = self.actor.alpha.detach()
 
-        # convert to torch.Tensor
-        ob = ptu.from_numpy(ob_no)
-        ac = ptu.from_numpy(ac_na)
-        next_ob = ptu.from_numpy(next_ob_no)
-        re = ptu.from_numpy(re_n)
-        terminal = ptu.from_numpy(terminal_n)
+        ob_no = ptu.from_numpy(ob_no)
+        ac_na = ptu.from_numpy(ac_na)
+        next_ob_no = ptu.from_numpy(next_ob_no)
+        re_n = ptu.from_numpy(re_n)
+        terminal_n = ptu.from_numpy(terminal_n)
 
-        # calc q
-        q1, q2 = self.critic.forward(ob, ac)
+        action_dist = self.actor.forward(next_ob_no)
+        next_ac_na = action_dist.rsample()
+        log_prob = action_dist.log_prob(next_ac_na)
+        entropy = log_prob.sum(1, keepdim=True) # keepdim is necessary!
+        next_q1, next_q2 = self.critic_target.forward(next_ob_no,next_ac_na)
+        target_v = (torch.min(next_q1, next_q2) + alpha * entropy).squeeze(-1)
+        q_target = re_n + gamma * (1 - terminal_n) * target_v
+        q_target = q_target.unsqueeze(1).detach()
 
-        # calc q_target
-        next_ac_dist = self.actor.forward(next_ob)
-        next_ac = next_ac_dist.rsample().clip(*self.action_range)
-        next_entropy = -next_ac_dist.log_prob(next_ac).sum(dim=1)
-        next_q1, next_q2 = self.critic_target(next_ob, next_ac)
-        minQ = torch.min(next_q1, next_q2)
-        q_target = re + gamma * (minQ + alpha*next_entropy) * (1-terminal)
-        q_target = q_target.detach() # independent of critic. detach!!!
+        q1, q2 = self.critic.forward(ob_no, ac_na)
+        q1_loss = self.critic.loss.forward(q1, q_target)
+        q2_loss = self.critic.loss.forward(q2, q_target)
+        critic_loss = q1_loss + q2_loss
 
-        # calc loss,  optimize
-        loss1 = self.critic.loss(q1, q_target)
-        loss2 = self.critic.loss(q2, q_target)
-        loss_sum = loss1 + loss2
         self.critic.optimizer.zero_grad()
-        loss_sum.backward()
+        critic_loss.backward()
         self.critic.optimizer.step()
-        critic_loss = loss_sum.item()
-        
+
         return critic_loss
 
     def train(self, ob_no, ac_na, re_n, next_ob_no, terminal_n):

@@ -64,37 +64,30 @@ class MLPPolicySAC(MLPPolicy):
         # HINT: 
         # You will need to clip log values
         # You will need SquashedNormal from sac_utils file 
-        lb, ub = self.action_range
-        logstd = lb + .5 * (ub - lb) * (self.logstd.tanh() + 1) # (-1,1) -> (lb, ub)
-        std = torch.exp(logstd)
-        mean = self.mean_net.forward(observation)
-        SN = sac_utils.SquashedNormal(mean, std)
+        scale = self.logstd.clip(*self.log_std_bounds).exp()
+        loc = self.mean_net(observation)
+        SN = sac_utils.SquashedNormal(loc=loc, scale=scale)
         return SN
 
     def update(self, obs, critic):
         # TODO Update actor network and entropy regularizer
         # return losses and alpha value
-        
-        # calc entropy
-        '''  [The next two lines of comments are wrong!!! (why?)]'''
-        '''action = ptu.from_numpy(self.get_action(obs, True))'''
-        '''action_dist = self.forward(ptu.from_numpy(obs))'''
-        action_dist = self.forward(ptu.from_numpy(obs))
-        action = action_dist.rsample().clip(*self.action_range)
+        obs = ptu.from_numpy(obs)
+
+        action_dist = self.forward(obs)
+        action = action_dist.rsample()
         log_prob = action_dist.log_prob(action)
-        entropy = -torch.sum(log_prob, dim=1)
+        entropy = -log_prob.sum(1)
+        q1, q2 = critic.forward(obs, action)
+        min_q = torch.min(q1, q2)
 
-        # calc actor_loss & alpha_loss
-        q1, q2 = critic.forward(ptu.from_numpy(obs), action)
-        qmin = torch.min(q1, q2)
-        actor_loss = torch.mean(-qmin - self.alpha.detach() * entropy)
-        entropy_term_detach = (self.target_entropy - entropy).detach() # independent of alpha!!!
-        alpha_loss = -torch.mean(self.alpha * entropy_term_detach)
-
-        # optimize
+        actor_loss = (-self.alpha.detach() * entropy - min_q).mean()
         self.optimizer.zero_grad()
         actor_loss.backward()
         self.optimizer.step()
+
+        alpha_target = (entropy - self.target_entropy)
+        alpha_loss = (self.alpha * alpha_target.detach()).mean()
         self.log_alpha_optimizer.zero_grad()
         alpha_loss.backward()
         self.log_alpha_optimizer.step()
