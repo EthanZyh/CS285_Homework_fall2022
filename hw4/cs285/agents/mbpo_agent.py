@@ -1,3 +1,4 @@
+from cs285.models.ff_model import FFModel
 from .base_agent import BaseAgent
 from .sac_agent import SACAgent
 from .mb_agent import MBAgent
@@ -24,20 +25,26 @@ class MBPOAgent(BaseAgent):
         # dynamics model. Start from a state sampled from the replay buffer.
 
         # sample 1 transition from self.mb_agent.replay_buffer
-        ob, _, _, _, terminal = TODO
+        # print('collect_model_trajectory')
+        ob, _, _, _, terminal = self.mb_agent.replay_buffer.sample_random_data(1)
 
         obs, acs, rewards, next_obs, terminals, image_obs = [], [], [], [], [], []
         for _ in range(rollout_length):
             # get the action from the policy
-            ac = TODO
+            # print(f'rollout_length: {_}/{rollout_length}')
+            ac = self.actor.get_action(ob, True)
             
             # determine the next observation by averaging the prediction of all the 
             # dynamics models in the ensemble
-            next_ob = TODO
+            next_ob = 0.0
+            for i in range(self.mb_agent.ensemble_size):
+                model: FFModel = self.mb_agent.dyn_models[i]
+                next_ob += model.get_prediction(ob, ac, self.mb_agent.data_statistics)
+            next_ob /= self.mb_agent.ensemble_size
 
             # query the reward function to determine the reward of this transition
             # HINT: use self.env.get_reward
-            rew, _ = TODO
+            rew, _ = self.env.get_reward(next_ob, ac)
 
             obs.append(ob[0])
             acs.append(ac[0])
@@ -46,6 +53,7 @@ class MBPOAgent(BaseAgent):
             terminals.append(terminal[0])
 
             ob = next_ob
+        # print('collect_model_trajectory done')
         return [Path(obs, image_obs, acs, rewards, next_obs, terminals)]
 
     def add_to_replay_buffer(self, paths, from_model=False, **kwargs):
